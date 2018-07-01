@@ -341,21 +341,6 @@ impl<'tcx> RegionInferenceContext<'tcx> {
         }
     }
 
-    /// Indicates that the region variable `sup` must outlive `sub` is live at the point `point`.
-    pub(super) fn add_outlives(
-        &mut self,
-        locations: Locations,
-        sup: RegionVid,
-        sub: RegionVid,
-    ) {
-        assert!(self.inferred_values.is_none(), "values already inferred");
-        self.constraints.push(OutlivesConstraint {
-            locations,
-            sup,
-            sub,
-        })
-    }
-
     /// Perform region inference and report errors if we see any
     /// unsatisfiable constraints. If this is a closure, returns the
     /// region requirements to propagate to our creator, if any.
