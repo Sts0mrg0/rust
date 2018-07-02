@@ -180,20 +180,20 @@ impl ToElementIndex for RegionElementIndex {
 /// compact `SparseBitMatrix` representation, with one row per region
 /// variable. The columns consist of either universal regions or
 /// points in the CFG.
-pub(super) struct RegionValues {
+pub(super) struct RegionValues<N: Idx> {
     elements: Rc<RegionValueElements>,
-    matrix: SparseBitMatrix<RegionVid, RegionElementIndex>,
+    matrix: SparseBitMatrix<N, RegionElementIndex>,
 
     /// If cause tracking is enabled, maps from a pair (r, e)
     /// consisting of a region `r` that contains some element `e` to
     /// the reason that the element is contained. There should be an
     /// entry for every bit set to 1 in `SparseBitMatrix`.
-    causes: Option<CauseMap>,
+    causes: Option<CauseMap<N>>,
 }
 
-type CauseMap = FxHashMap<(RegionVid, RegionElementIndex), Cause>;
+type CauseMap<N> = FxHashMap<(N, RegionElementIndex), Cause>;
 
-impl RegionValues {
+impl<N: Idx> RegionValues<N> {
     /// Creates a new set of "region values" that tracks causal information.
     /// Each of the regions in num_region_variables will be initialized with an
     /// empty set of points and no causal information.
@@ -206,7 +206,7 @@ impl RegionValues {
         Self {
             elements: elements.clone(),
             matrix: SparseBitMatrix::new(
-                RegionVid::new(num_region_variables),
+                N::new(num_region_variables),
                 RegionElementIndex::new(elements.num_elements()),
             ),
             causes: Some(CauseMap::default()),
@@ -235,7 +235,7 @@ impl RegionValues {
     /// the element is newly added (i.e., was not already present).
     pub(super) fn add_element<E: ToElementIndex>(
         &mut self,
-        r: RegionVid,
+        r: N,
         elem: E,
         cause: &Cause,
     ) -> bool {
@@ -245,7 +245,7 @@ impl RegionValues {
 
     /// Add all elements in `r_from` to `r_to` (because e.g. `r_to:
     /// r_from`).
-    pub(super) fn add_region(&mut self, r_to: RegionVid, r_from: RegionVid) -> bool {
+    pub(super) fn add_region(&mut self, r_to: N, r_from: N) -> bool {
         self.matrix.merge(r_from, r_to)
     }
 
@@ -253,10 +253,12 @@ impl RegionValues {
     ///
     /// Takes a "lazy" cause -- this function will return the cause, but it will only
     /// be invoked if cause tracking is enabled.
-    fn add_internal<F>(&mut self, r: RegionVid, i: RegionElementIndex, make_cause: F) -> bool
-    where
-        F: FnOnce(&CauseMap) -> Cause,
-    {
+    fn add_internal(
+        &mut self,
+        r: N,
+        i: RegionElementIndex,
+        make_cause: impl FnOnce(&CauseMap<N>) -> Cause,
+    ) -> bool {
         if self.matrix.add(r, i) {
             debug!("add(r={:?}, i={:?})", r, self.elements.to_element(i));
 
@@ -284,14 +286,14 @@ impl RegionValues {
     }
 
     /// True if the region `r` contains the given element.
-    pub(super) fn contains<E: ToElementIndex>(&self, r: RegionVid, elem: E) -> bool {
+    pub(super) fn contains<E: ToElementIndex>(&self, r: N, elem: E) -> bool {
         let i = self.elements.index(elem);
         self.matrix.contains(r, i)
     }
 
     /// True if `sup_region` contains all the CFG points that
     /// `sub_region` contains. Ignores universal regions.
-    pub(super) fn contains_points(&self, sup_region: RegionVid, sub_region: RegionVid) -> bool {
+    pub(super) fn contains_points(&self, sup_region: N, sub_region: N) -> bool {
         // This could be done faster by comparing the bitsets. But I
         // am lazy.
         self.element_indices_contained_in(sub_region)
@@ -304,7 +306,7 @@ impl RegionValues {
     /// `elements_contained_in`.
     pub(super) fn element_indices_contained_in<'a>(
         &'a self,
-        r: RegionVid,
+        r: N,
     ) -> impl Iterator<Item = RegionElementIndex> + 'a {
         self.matrix.iter(r).map(move |i| i)
     }
@@ -312,7 +314,7 @@ impl RegionValues {
     /// Returns just the universal regions that are contained in a given region's value.
     pub(super) fn universal_regions_outlived_by<'a>(
         &'a self,
-        r: RegionVid,
+        r: N,
     ) -> impl Iterator<Item = RegionVid> + 'a {
         self.element_indices_contained_in(r)
             .map(move |i| self.elements.to_universal_region(i))
@@ -323,14 +325,14 @@ impl RegionValues {
     /// Returns all the elements contained in a given region's value.
     pub(super) fn elements_contained_in<'a>(
         &'a self,
-        r: RegionVid,
+        r: N,
     ) -> impl Iterator<Item = RegionElement> + 'a {
         self.element_indices_contained_in(r)
             .map(move |r| self.elements.to_element(r))
     }
 
     /// Returns a "pretty" string value of the region. Meant for debugging.
-    pub(super) fn region_value_str(&self, r: RegionVid) -> String {
+    pub(super) fn region_value_str(&self, r: N) -> String {
         let mut result = String::new();
         result.push_str("{");
 
@@ -404,7 +406,7 @@ impl RegionValues {
     ///
     /// Returns None if cause tracking is disabled or `elem` is not
     /// actually found in `r`.
-    pub(super) fn cause<T: ToElementIndex>(&self, r: RegionVid, elem: T) -> Option<Cause> {
+    pub(super) fn cause<T: ToElementIndex>(&self, r: N, elem: T) -> Option<Cause> {
         let index = self.elements.index(elem);
         if let Some(causes) = &self.causes {
             causes.get(&(r, index)).cloned()
