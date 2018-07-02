@@ -185,7 +185,7 @@ impl<'gcx, 'tcx> UseFinder<'gcx, 'tcx> {
 
         stack.push(self.start_point);
         while let Some(p) = stack.pop() {
-            if !self.regioncx.region_contains_point(self.borrow.region, p) {
+            if !self.regioncx.region_contains(self.borrow.region, p) {
                 continue;
             }
 
